@@ -1,9 +1,9 @@
 package net.mengkang.service;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONException;
+import com.alibaba.fastjson.JSONObject;
 import net.mengkang.entity.Client;
-import org.apache.commons.codec.binary.Base64;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 
 public class RequestService {
@@ -15,23 +15,23 @@ public class RequestService {
      * @return
      */
     public static Client clientRegister(String request) {
-        String res = new String(Base64.decodeBase64(request));
-        JSONObject json = new JSONObject(res);
+//        String res = new String(Base64.decodeBase64(request));
+        JSONObject json = JSON.parseObject("{\"id\":1,\"rid\":21,\"token\":\"43606811c7305ccc6abb2be116579bfd\"}");
 
         Client client = new Client();
 
-        if (!json.has("rid")) {
+        if (!json.containsKey("rid")) {
             return client;
         }
 
         try {
-            client.setRoomId(json.getInt("rid"));
+            client.setRoomId(json.getInteger("rid"));
         } catch (JSONException e) {
             e.printStackTrace();
             return client;
         }
 
-        if (!json.has("id") || !json.has("token")) {
+        if (!json.containsKey("id") || !json.containsKey("token")) {
             return client;
         }
 

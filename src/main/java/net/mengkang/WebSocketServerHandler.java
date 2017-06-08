@@ -1,5 +1,6 @@
 package net.mengkang;
 
+import com.alibaba.fastjson.JSON;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -13,7 +14,6 @@ import net.mengkang.dto.Response;
 import net.mengkang.entity.Client;
 import net.mengkang.service.MessageService;
 import net.mengkang.service.RequestService;
-import org.json.JSONObject;
 
 import java.util.List;
 import java.util.Map;
@@ -117,7 +117,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
 
         if (client.getId() == 0) {
             Response response = new Response(1001, "没登录不能聊天哦");
-            String msg = new JSONObject(response).toString();
+            String msg = JSON.toJSONString(response);
             ctx.channel().write(new TextWebSocketFrame(msg));
             return;
         }
@@ -126,7 +126,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
         System.out.println(" 收到 " + ctx.channel() + request);
 
         Response response = MessageService.sendMessage(client, request);
-        String msg = new JSONObject(response).toString();
+        String msg = JSON.toJSONString(response);
         if (channelGroupMap.containsKey(client.getRoomId())) {
             channelGroupMap.get(client.getRoomId()).writeAndFlush(new TextWebSocketFrame(msg));
         }
