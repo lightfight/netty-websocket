@@ -14,10 +14,18 @@ import net.mengkang.dto.Response;
 import net.mengkang.entity.Client;
 import net.mengkang.service.MessageService;
 import net.mengkang.service.RequestService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
 import static io.netty.handler.codec.http.HttpMethod.GET;
@@ -25,6 +33,8 @@ import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebSocketServerHandler.class);
 
     // websocket 服务的 uri
     private static final String WEBSOCKET_PATH = "/websocket";
@@ -38,6 +48,8 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
     private Client client = null;
 
     private WebSocketServerHandshaker handshaker;
+
+    private static final ExecutorService POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
     @Override
     public void messageReceived(ChannelHandlerContext ctx, Object msg) {
@@ -75,14 +87,14 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
         Map<String, List<String>> parameters = queryStringDecoder.parameters();
 
         if (parameters.size() == 0 || !parameters.containsKey(HTTP_REQUEST_STRING)) {
-            System.err.printf(HTTP_REQUEST_STRING + "参数不可缺省");
+            LOGGER.info(HTTP_REQUEST_STRING + "参数不可缺省");
             sendHttpResponse(ctx, req, new DefaultFullHttpResponse(HTTP_1_1, NOT_FOUND));
             return;
         }
 
         client = RequestService.clientRegister(parameters.get(HTTP_REQUEST_STRING).get(0));
         if (client.getRoomId() == 0) {
-            System.err.printf("房间号不可缺省");
+            LOGGER.info("房间号不可缺省");
             sendHttpResponse(ctx, req, new DefaultFullHttpResponse(HTTP_1_1, NOT_FOUND));
             return;
         }
@@ -105,7 +117,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
             // 握手成功之后,业务逻辑
             if (channelFuture.isSuccess()) {
                 if (client.getId() == 0) {
-                    System.out.println(ctx.channel() + " 游客");
+                    LOGGER.info(ctx.channel() + " 游客");
                     return;
                 }
 
@@ -128,9 +140,83 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
         Response response = MessageService.sendMessage(client, request);
         String msg = JSON.toJSONString(response);
         if (channelGroupMap.containsKey(client.getRoomId())) {
-            channelGroupMap.get(client.getRoomId()).writeAndFlush(new TextWebSocketFrame(msg));
+            ChannelGroup channelGroup = channelGroupMap.get(client.getRoomId());
+            sendExec(channelGroup);
+        }
+    }
+
+    private void send(ChannelGroup channelGroup, String msg) {
+        channelGroup.writeAndFlush(new TextWebSocketFrame(msg));
+    }
+
+    /**
+     * 发送处理后的结果
+     *
+     * @param channelGroup
+     */
+    private void sendExec(final ChannelGroup channelGroup) {
+
+        LOGGER.info("开始处理命令...");
+
+
+//            Process process = Runtime.getRuntime().exec("cmd /k cd E:\\ddt2_projects\\branchs\\match\\match_view && mvn package");
+        try {
+            Process process = Runtime.getRuntime().exec("cmd /k cd E:\\ddt2_run\\server\\battle && tree /f");
+
+            process(channelGroup, process);
+        } catch (Exception e) {
+            LOGGER.error(e.getMessage(), e);
         }
 
+
+        LOGGER.info("结束处理命令");
+
+    }
+
+    private void process(final ChannelGroup channelGroup, final Process process){
+//        POOL.execute(new Runnable() {
+//            @Override
+//            public void run() {
+//
+//            }
+//        });
+
+        try {
+            InputStream in = process.getInputStream();
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(in, "GB2312"));
+
+            String line;
+            //直到读完为止
+            while ((line = bufferedReader.readLine()) != null) {
+                System.out.println(line);
+                if (line.length() == 0) { // 用这个作为结束的判断不准确，因为目前线程会卡在bufferedReader.readLine()
+                    break;
+                }
+                //                LOGGER.info(line);
+                channelGroup.writeAndFlush(new TextWebSocketFrame(line));
+            }
+            bufferedReader.close();
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage(), e);
+        } finally {
+            if (process.getInputStream() != null) {
+                try {
+                    process.getInputStream().close();
+                    process.getOutputStream().close();
+                    process.getErrorStream().close();
+                } catch (IOException e) {
+                    LOGGER.error(e.getMessage(), e);
+                }
+            }
+        }
+
+        // 结束处理释放线程资源
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            LOGGER.error(e.getMessage(), e);
+        }
+        process.destroy();
     }
 
     private void handleWebSocketFrame(ChannelHandlerContext ctx, WebSocketFrame frame) {
